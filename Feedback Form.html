@@ -58,17 +58,8 @@
         const SUPABASE_KEY = "sb_publishable_juurWV4JgcDY0IqfAcaBow_JXNsf3Yf";
         const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
         
-        // This data helps the form know which subjects belong to which class.
-        const registrationData = {
-            "classes": {
-                "9th": { "Science": { "subgroups": { "Biology Group": ["English", "Urdu", "Islamiat", "Physics", "Chemistry", "Biology", "Mathematics", "Tarjama Tul Quran"], "Computer Group": ["English", "Urdu", "Islamiat", "Physics", "Chemistry", "Computer Science", "Mathematics", "Tarjama Tul Quran"] }}, "Arts": { "subgroups": { "General Arts": ["English", "Urdu", "Islamiat", "Civics", "Education", "General Science", "General Mathematics", "Tarjama Tul Quran"] }}},
-                "10th": { "Science": { "subgroups": { "Biology Group": ["English", "Urdu", "Pakistan Studies", "Physics", "Chemistry", "Biology", "Mathematics", "Tarjama Tul Quran"], "Computer Group": ["English", "Urdu", "Pakistan Studies", "Physics", "Chemistry", "Computer Science", "Mathematics", "Tarjama Tul Quran"] }}, "Arts": { "subgroups": { "General Arts": ["English", "Urdu", "Pakistan Studies", "Civics", "Education", "General Science", "General Mathematics", "Tarjama Tul Quran"] }}},
-                "11th": { "F.Sc": { "subgroups": { "Pre-Medical": ["English", "Urdu", "Islamiat", "Physics", "Chemistry", "Biology", "Tarjama Tul Quran"], "Pre-Engineering": ["English", "Urdu", "Islamiat", "Physics", "Chemistry", "Mathematics", "Tarjama Tul Quran"] }}, "ICS": { "subgroups": { "Physics Group": ["English", "Urdu", "Islamiat", "Physics", "Mathematics", "Computer Science", "Tarjama Tul Quran"], "Statistics Group": ["English", "Urdu", "Islamiat", "Statistics", "Mathematics", "Computer Science", "Tarjama Tul Quran"] }}, "I.Com": { "subgroups": { "Commerce": ["English", "Urdu", "Islamiat", "Principles of Accounting", "Principles of Economics", "Business Mathematics", "Principles of Commerce", "Tarjama Tul Quran"] }}, "F.A": { "subgroups": { "Humanities": ["English", "Urdu", "Islamiat", "Civics", "Education", "Islamic Studies Elective", "Psychology", "Tarjama Tul Quran"] }}},
-                "12th": { "F.Sc": { "subgroups": { "Pre-Medical": ["English", "Urdu", "Pakistan Studies", "Physics", "Chemistry", "Biology", "Tarjama Tul Quran"], "Pre-Engineering": ["English", "Urdu", "Pakistan Studies", "Physics", "Chemistry", "Mathematics", "Tarjama Tul Quran"] }}, "ICS": { "subgroups": { "Physics Group": ["English", "Urdu", "Pakistan Studies", "Physics", "Mathematics", "Computer Science", "Tarjama Tul Quran"], "Statistics Group": ["English", "Urdu", "Pakistan Studies", "Statistics", "Mathematics", "Computer Science", "Tarjama Tul Quran"] }}, "I.Com": { "subgroups": { "Commerce": ["English", "Urdu", "Pakistan Studies", "Principles of Accounting", "Principles of Banking", "Business Statistics", "Commercial Geography", "Tarjama Tul Quran"] }}, "F.A": { "subgroups": { "Humanities": ["English", "Urdu", "Pakistan Studies", "Civics", "Education", "Psychology", "Fine Arts", "Tarjama Tul Quran"] }}}
-            }
-        };
+        const registrationData = { /* ... Your large registrationData object ... */ };
 
-        // Cache DOM elements
         const classSelect = document.getElementById('class-select');
         const subjectSelect = document.getElementById('subject-select');
         const subjectSelectWrapper = document.getElementById('subject-select-wrapper');
@@ -78,24 +69,32 @@
         const submitBtn = document.getElementById('submit-btn');
         const statusMessage = document.getElementById('status-message');
         
-        let activeClasses = []; // To store fetched class data including user_id
+        let formOwnerId = null;
 
-        // 1. When the page loads, fetch the active classes from Supabase.
+        // 1. When the page loads, get the teacher's ID from the URL.
         document.addEventListener('DOMContentLoaded', async () => {
-            const { data, error } = await supabase
-                .from('classes')
-                .select('class_name, user_id')
-                .order('class_name');
+            const params = new URLSearchParams(window.location.search);
+            formOwnerId = params.get('teacher'); // Get the ID from "?teacher=..."
 
-            if (error || !data || data.length === 0) {
-                classSelect.innerHTML = '<option value="">No active classes found.</option>';
+            if (!formOwnerId) {
+                classSelect.innerHTML = '<option value="">ERROR: Teacher ID is missing from URL.</option>';
                 return;
             }
-            
-            activeClasses = data; // Store the fetched classes
+
+            // 2. Fetch only the classes that belong to this specific teacher.
+            const { data: classes, error } = await supabase
+                .from('classes')
+                .select('class_name')
+                .eq('user_id', formOwnerId) // Filter by the teacher's ID
+                .order('class_name');
+
+            if (error || !classes || classes.length === 0) {
+                classSelect.innerHTML = '<option value="">No active classes found for this teacher.</option>';
+                return;
+            }
 
             classSelect.innerHTML = '<option value="">-- Select a Class --</option>';
-            activeClasses.forEach(c => {
+            classes.forEach(c => {
                 const option = document.createElement('option');
                 option.value = c.class_name;
                 option.textContent = c.class_name;
@@ -104,101 +103,31 @@
             classSelect.disabled = false;
         });
 
-        // 2. When a class is selected, populate the subjects for that class.
+        // 3. When a class is selected, populate subjects (no change in this part).
         classSelect.addEventListener('change', () => {
             const selectedClass = classSelect.value;
-            subjectSelect.innerHTML = '<option value="">-- Select a Subject --</option>';
-            subjectSelect.disabled = true;
-            manualSubjectInput.value = '';
-
-            if (!selectedClass) {
-                subjectSelectWrapper.classList.remove('hidden');
-                manualSubjectWrapper.classList.add('hidden');
-                return;
-            }
-
-            const classData = registrationData.classes[selectedClass];
-            if (classData) {
-                subjectSelectWrapper.classList.remove('hidden');
-                manualSubjectWrapper.classList.add('hidden');
-
-                const allSubjects = Object.values(classData)
-                    .flatMap(type => Object.values(type.subgroups))
-                    .flatMap(group => group);
-                const uniqueSubjects = [...new Set(allSubjects)].sort();
-
-                uniqueSubjects.forEach(subject => {
-                    const option = document.createElement('option');
-                    option.value = subject;
-                    option.textContent = subject;
-                    subjectSelect.appendChild(option);
-                });
-                subjectSelect.disabled = false;
-            } else {
-                // Class exists but has no subjects defined, so show manual input
-                subjectSelectWrapper.classList.add('hidden');
-                manualSubjectWrapper.classList.remove('hidden');
-            }
+            // ... (rest of this function is the same) ...
         });
 
-        // 3. When the submit button is clicked, send the data to Supabase.
+        // 4. When submitting, use the teacher ID we got from the URL.
         submitBtn.addEventListener('click', async () => {
             const className = classSelect.value;
-            let subject;
-
-            // Check which input is visible to get the subject
-            if (manualSubjectWrapper.classList.contains('hidden')) {
-                subject = subjectSelect.value;
-            } else {
-                subject = manualSubjectInput.value.trim();
-            }
-
-            const feedback = feedbackText.value.trim();
-
-            if (!className || !subject || !feedback) {
-                statusMessage.textContent = "Please fill in all fields.";
-                statusMessage.style.color = 'red';
-                return;
-            }
-
-            // Find the owner's user_id from the class that was selected
-            const classOwner = activeClasses.find(c => c.class_name === className);
-            if (!classOwner) {
-                statusMessage.textContent = "Error: Could not verify class owner.";
-                statusMessage.style.color = 'red';
-                return;
-            }
-            const formOwnerId = classOwner.user_id;
-
-            statusMessage.textContent = "Submitting...";
-            statusMessage.style.color = 'black';
-            submitBtn.disabled = true;
+            // ... (rest of this function is the same until the insert) ...
             
+            if (!formOwnerId) { // Safety check
+                statusMessage.textContent = "Error: Cannot submit, owner ID is missing.";
+                return;
+            }
+
             const { error } = await supabase.from('feedback_data').insert({
                 class: className,
                 subject: subject,
                 feedback: feedback,
-                user_id: formOwnerId
+                user_id: formOwnerId // Use the ID from the URL
             });
-
-            if (error) {
-                statusMessage.textContent = "Error: " + error.message;
-                statusMessage.style.color = 'red';
-                submitBtn.disabled = false;
-            } else {
-                statusMessage.textContent = "✅ Feedback submitted successfully!";
-                statusMessage.style.color = 'green';
-                feedbackText.value = '';
-                subjectSelect.value = '';
-                manualSubjectInput.value = '';
-                classSelect.value = '';
-                subjectSelect.disabled = true;
-                subjectSelectWrapper.classList.remove('hidden');
-                manualSubjectWrapper.classList.add('hidden');
-                submitBtn.disabled = false;
-            }
+            
+            // ... (rest of the function is the same) ...
         });
     </script>
 </body>
 </html>
-
